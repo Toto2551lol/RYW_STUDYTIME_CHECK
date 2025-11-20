@@ -453,7 +453,8 @@ app.get("/api/subjects", async (req, res) => {
 });
 
 // ====== CLASS TIMETABLE (teacher) ======
-app.get("/api/classes/timetable", authMiddleware, async (req, res) => {
+// GET ตารางเรียนระดับห้อง – public (ใช้ได้ทั้ง register, student, etc.)
+app.get("/api/classes/timetable", async (req, res) => {
   try {
     const { level, room } = req.query;
     if (!level || !room) {
@@ -474,6 +475,7 @@ app.get("/api/classes/timetable", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 app.put(
   "/api/classes/timetable",
@@ -773,4 +775,25 @@ app.listen(PORT, () => {
   ensureAdminTeacher().catch((err) => {
     console.error("Error ensuring admin teacher:", err);
   });
+});
+app.get("/api/public/classes/timetable", async (req, res) => {
+  try {
+    const { level, room } = req.query;
+    if (!level || !room) {
+      return res
+        .status(400)
+        .json({ message: "ต้องระบุ level และ room เช่น ม.6, 6/2" });
+    }
+
+    const docs = await ClassTimetable.find({ level, room }).lean();
+    const result = docs.map((d) => ({
+      day: d.day,
+      period: d.period,
+      subjectCode: d.subjectCode,
+    }));
+    res.json(result);
+  } catch (err) {
+    console.error("get public class timetable error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });

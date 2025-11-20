@@ -1,4 +1,3 @@
-// src/components/auth/RegisterPage.jsx
 import React, { useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
@@ -56,9 +55,7 @@ export default function RegisterPage() {
     }));
   };
 
-  // ===========================
-  // STEP 1 -> NEXT (โหลดวิชา + ตารางเรียนห้อง)
-  // ===========================
+  // STEP 1 -> NEXT (โหลดวิชา + timetable ห้อง ถ้ามี)
   const handleStep1Submit = async (e) => {
     e.preventDefault();
     setGlobalError("");
@@ -87,38 +84,45 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
-      // 1) โหลดรายชื่อวิชาจาก Excel
+      // 1) โหลดรายชื่อวิชา
       const subRes = await axios.get(`${apiBaseUrl}/api/subjects`, {
         params: { level, room },
       });
-      setAvailableSubjects(subRes.data || []);
+      const subs = subRes.data || [];
+      setAvailableSubjects(subs);
 
-      // 2) พยายามโหลด "ตารางเรียนระดับห้อง" ที่ครูตั้งไว้ (public endpoint)
-      let grid = buildEmptyTimetable();
+      // 2) พยายามโหลดตารางเรียนจากระดับห้อง (config ของอาจารย์)
       try {
         const ttRes = await axios.get(
-          `${apiBaseUrl}/api/public/classes/timetable`,
+          `${apiBaseUrl}/api/classes/timetable`,
           {
             params: { level, room },
           }
         );
-
-        (ttRes.data || []).forEach((t) => {
-          if (grid[t.day] && grid[t.day][t.period] !== undefined) {
-            grid[t.day][t.period] = t.subjectCode;
-          }
-        });
-
-        setTimetable(grid);
-        setGlobalSuccess(
-          "โหลดรายชื่อวิชา + ตารางเรียนจากระดับห้องเรียบร้อย (สามารถแก้ไขได้)"
-        );
+        const list = Array.isArray(ttRes.data) ? ttRes.data : [];
+        if (list.length) {
+          const grid = buildEmptyTimetable();
+          list.forEach((t) => {
+            if (grid[t.day] && grid[t.day][t.period] !== undefined) {
+              grid[t.day][t.period] = t.subjectCode;
+            }
+          });
+          setTimetable(grid);
+          setGlobalSuccess(
+            "โหลดตารางเรียนจากครูเรียบร้อย คุณสามารถแก้ไขก่อนบันทึกได้"
+          );
+        } else {
+          setTimetable(buildEmptyTimetable());
+          setGlobalSuccess(
+            "โหลดรายชื่อวิชาเรียบร้อย กรุณากรอกตารางเรียน 5 วัน"
+          );
+        }
       } catch (err) {
-        console.warn("no class timetable for this room yet", err);
-        // ถ้ายังไม่มี config ห้อง → ใช้ตารางว่างให้เด็กกรอกเอง
+        console.error("load class timetable error:", err);
+        // ถ้าโหลด timetable ห้องไม่สำเร็จ ให้ปล่อยให้กรอกเอง
         setTimetable(buildEmptyTimetable());
         setGlobalSuccess(
-          "โหลดรายชื่อวิชาเรียบร้อย (ยังไม่มีตารางเรียนระดับห้อง ให้กรอกตารางเอง)"
+          "โหลดรายชื่อวิชาเรียบร้อย (ยังไม่มีตารางเรียนจากครู) กรุณากรอกตารางเรียน 5 วัน"
         );
       }
 
@@ -134,9 +138,7 @@ export default function RegisterPage() {
     }
   };
 
-  // ===========================
   // STEP 2 -> REGISTER
-  // ===========================
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setGlobalError("");
@@ -166,13 +168,10 @@ export default function RegisterPage() {
       TH_DAYS.forEach((day) => {
         PERIODS.forEach((p) => {
           const code = timetable[day][p];
-          if (code) {
-            timetableArray.push({ day, period: p, subjectCode: code });
-          }
+          if (code) timetableArray.push({ day, period: p, subjectCode: code });
         });
       });
 
-      // register
       await axios.post(`${apiBaseUrl}/api/auth/register`, {
         username: form.username,
         password: form.password,
@@ -184,7 +183,6 @@ export default function RegisterPage() {
 
       setGlobalSuccess("สมัครสมาชิกสำเร็จ กำลังเข้าสู่ระบบ...");
 
-      // auto login
       const loginRes = await handleLogin(form.username, form.password);
       if (loginRes.ok) {
         if (loginRes.user.role === "teacher") {
@@ -213,7 +211,7 @@ export default function RegisterPage() {
           : "bg-slate-100 text-slate-900"
       }`}
     >
-      <div className="w-full max-w-5xl px-4 py-6 sm:py-10">
+      <div className="w-full max-w-6xl px-4 py-6 sm:py-10">
         <div className="flex justify-between items-center mb-4 sm:mb-6">
           <div>
             <h1 className="text-lg sm:text-2xl font-semibold">
@@ -242,7 +240,8 @@ export default function RegisterPage() {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-6 items-start">
+        {/* layout: บนมือถือ 1 คอลัมน์ / บนจอใหญ่ side-by-side */}
+        <div className="grid gap-6 items-start lg:grid-cols-[1.1fr,1.6fr]">
           {/* LEFT INFO */}
           <motion.section
             initial={{ opacity: 0, x: -15 }}
@@ -255,8 +254,8 @@ export default function RegisterPage() {
             <ol className="text-xs sm:text-sm space-y-2 text-slate-200 list-decimal list-inside">
               <li>กรอกข้อมูลบัญชี + ชั้น / ห้อง (Step 1)</li>
               <li>ระบบโหลดรายชื่อวิชาจากโครงสร้างรายวิชา (Excel)</li>
-              <li>ระบบพยายามโหลดตารางเรียนจาก “ตารางเรียนระดับห้อง” ที่ครูตั้งไว้</li>
-              <li>ถ้ายังไม่มี ครูตั้งไม่เสร็จ นักเรียนสามารถกรอกตารางเองใน Step 2 ได้</li>
+              <li>โหลดตารางเรียนจาก “ตารางเรียนระดับห้อง” ที่ครูตั้งไว้</li>
+              <li>ถ้ายังไม่มี ครูยังไม่ส่ง นักเรียนสามารถกรอกเองใน Step 2 ได้</li>
             </ol>
             <div className="mt-4 border-t border-slate-700/60 pt-3 text-[11px] text-slate-400">
               <p>รองรับทั้งมือถือและคอมพิวเตอร์ — ฟอร์มจะจัดเรียงอัตโนมัติ</p>
@@ -385,7 +384,7 @@ export default function RegisterPage() {
                   disabled={loading}
                   className="w-full mt-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2 text-xs sm:text-sm font-medium shadow disabled:opacity-60"
                 >
-                  {loading ? "กำลังโหลดรายชื่อวิชา..." : "ถัดไป: กรอกตารางเรียน"}
+                  {loading ? "กำลังโหลดตารางเรียน..." : "ถัดไป: กรอกตารางเรียน"}
                 </button>
               </form>
             ) : (
@@ -397,7 +396,7 @@ export default function RegisterPage() {
                   ระดับชั้น{" "}
                   <span className="font-semibold">{form.level}</span> ห้อง{" "}
                   <span className="font-semibold">{form.room}</span>{" "}
-                  – รายวิชาที่เลือกได้มาจากโครงสร้างรายวิชาตามหลักสูตรของห้องนี้
+                  – ตารางเรียนด้านล่างมาจากตารางเรียนระดับห้อง (ถ้ามี) สามารถแก้ไขได้
                 </p>
 
                 {availableSubjects.length === 0 ? (
@@ -405,13 +404,13 @@ export default function RegisterPage() {
                     ไม่พบรายชื่อวิชาจาก backend สำหรับระดับชั้นนี้
                   </div>
                 ) : (
-                  <div className="max-h-72 overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-                    <table className="w-full text-[10px] sm:text-xs">
+                  <div className="max-h-[420px] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <table className="min-w-[720px] md:min-w-[880px] text-[11px] sm:text-xs">
                       <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0">
                         <tr>
-                          <th className="px-2 py-2 text-left">วัน / คาบ</th>
+                          <th className="px-3 py-2 text-left">วัน / คาบ</th>
                           {PERIODS.map((p) => (
-                            <th key={p} className="px-2 py-2 text-center">
+                            <th key={p} className="px-3 py-2 text-center">
                               {p}
                             </th>
                           ))}
@@ -423,17 +422,17 @@ export default function RegisterPage() {
                             key={day}
                             className="border-t border-slate-200 dark:border-slate-700"
                           >
-                            <td className="px-2 py-2 font-medium whitespace-nowrap">
+                            <td className="px-3 py-2 font-medium whitespace-nowrap">
                               {day}
                             </td>
                             {PERIODS.map((p) => (
-                              <td key={p} className="px-1 py-1">
+                              <td key={p} className="px-2 py-1.5">
                                 <select
                                   value={timetable[day][p]}
                                   onChange={(e) =>
                                     handleSubjectChange(day, p, e.target.value)
                                   }
-                                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100 px-1 py-0.5 text-[10px] sm:text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/70"
+                                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100 px-2 py-1 text-[11px] sm:text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/70"
                                 >
                                   <option value="">— ไม่มีเรียน —</option>
                                   {availableSubjects.map((s) => (
