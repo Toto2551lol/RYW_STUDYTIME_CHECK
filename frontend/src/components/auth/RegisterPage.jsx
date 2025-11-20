@@ -56,7 +56,9 @@ export default function RegisterPage() {
     }));
   };
 
-  // STEP 1 -> NEXT
+  // ===========================
+  // STEP 1 -> NEXT (โหลดวิชา + ตารางเรียนห้อง)
+  // ===========================
   const handleStep1Submit = async (e) => {
     e.preventDefault();
     setGlobalError("");
@@ -84,11 +86,42 @@ export default function RegisterPage() {
 
     try {
       setLoading(true);
-      const res = await axios.get(`${apiBaseUrl}/api/subjects`, {
+
+      // 1) โหลดรายชื่อวิชาจาก Excel
+      const subRes = await axios.get(`${apiBaseUrl}/api/subjects`, {
         params: { level, room },
       });
-      setAvailableSubjects(res.data || []);
-      setGlobalSuccess("โหลดรายชื่อวิชาเรียบร้อย กรุณากรอกตารางเรียน");
+      setAvailableSubjects(subRes.data || []);
+
+      // 2) พยายามโหลด "ตารางเรียนระดับห้อง" ที่ครูตั้งไว้ (public endpoint)
+      let grid = buildEmptyTimetable();
+      try {
+        const ttRes = await axios.get(
+          `${apiBaseUrl}/api/public/classes/timetable`,
+          {
+            params: { level, room },
+          }
+        );
+
+        (ttRes.data || []).forEach((t) => {
+          if (grid[t.day] && grid[t.day][t.period] !== undefined) {
+            grid[t.day][t.period] = t.subjectCode;
+          }
+        });
+
+        setTimetable(grid);
+        setGlobalSuccess(
+          "โหลดรายชื่อวิชา + ตารางเรียนจากระดับห้องเรียบร้อย (สามารถแก้ไขได้)"
+        );
+      } catch (err) {
+        console.warn("no class timetable for this room yet", err);
+        // ถ้ายังไม่มี config ห้อง → ใช้ตารางว่างให้เด็กกรอกเอง
+        setTimetable(buildEmptyTimetable());
+        setGlobalSuccess(
+          "โหลดรายชื่อวิชาเรียบร้อย (ยังไม่มีตารางเรียนระดับห้อง ให้กรอกตารางเอง)"
+        );
+      }
+
       setStep(2);
     } catch (err) {
       console.error(err);
@@ -101,7 +134,9 @@ export default function RegisterPage() {
     }
   };
 
+  // ===========================
   // STEP 2 -> REGISTER
+  // ===========================
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setGlobalError("");
@@ -220,8 +255,8 @@ export default function RegisterPage() {
             <ol className="text-xs sm:text-sm space-y-2 text-slate-200 list-decimal list-inside">
               <li>กรอกข้อมูลบัญชี + ชั้น / ห้อง (Step 1)</li>
               <li>ระบบโหลดรายชื่อวิชาจากโครงสร้างรายวิชา (Excel)</li>
-              <li>เลือกวิชาตามตารางเรียนจริง 5 วัน (Step 2)</li>
-              <li>กดสมัคร ระบบจะสร้างบัญชีและตารางเรียนให้ทันที</li>
+              <li>ระบบพยายามโหลดตารางเรียนจาก “ตารางเรียนระดับห้อง” ที่ครูตั้งไว้</li>
+              <li>ถ้ายังไม่มี ครูตั้งไม่เสร็จ นักเรียนสามารถกรอกตารางเองใน Step 2 ได้</li>
             </ol>
             <div className="mt-4 border-t border-slate-700/60 pt-3 text-[11px] text-slate-400">
               <p>รองรับทั้งมือถือและคอมพิวเตอร์ — ฟอร์มจะจัดเรียงอัตโนมัติ</p>
@@ -396,11 +431,7 @@ export default function RegisterPage() {
                                 <select
                                   value={timetable[day][p]}
                                   onChange={(e) =>
-                                    handleSubjectChange(
-                                      day,
-                                      p,
-                                      e.target.value
-                                    )
+                                    handleSubjectChange(day, p, e.target.value)
                                   }
                                   className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100 px-1 py-0.5 text-[10px] sm:text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/70"
                                 >
