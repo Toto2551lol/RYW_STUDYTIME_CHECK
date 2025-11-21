@@ -21,7 +21,7 @@ import StudentDashboard from "./components/student/StudentDashboard";
 import TeacherDashboard from "./components/teacher/TeacherDashboard";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "https://ryw-studytime-check.onrender.com";
+  import.meta.env.VITE_API_BASE_URL || "https://https://rywstudytimecheck-production.up.railway.app";
 
 // ===== AUTH CONTEXT =====
 export const AuthContext = createContext(null);
